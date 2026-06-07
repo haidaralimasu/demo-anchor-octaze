@@ -76,9 +76,26 @@ jobs:
           network: mainnet
           mode: ci
 
-      # --- Fund the payer on the fork, then run the tests ---
+      # --- Wait for the fork's RPC to actually serve (route can lag readiness) ---
+      - name: Wait for RPC
+        run: |
+          for i in $(seq 1 30); do
+            ok=$(curl -s -X POST "$OCTAZE_RPC_URL" \
+              -H 'content-type: application/json' \
+              -d '{"jsonrpc":"2.0","id":1,"method":"getHealth"}' | grep -c '"result":"ok"' || true)
+            if [ "$ok" = "1" ]; then echo "RPC is serving"; exit 0; fi
+            echo "waiting for RPC… ($i)"; sleep 3
+          done
+          echo "RPC never became reachable"; exit 1
+
+      # --- Fund the payer on the fork (retry through any brief blips) ---
       - name: Fund payer on the fork
-        run: solana airdrop 100 --url "$OCTAZE_RPC_URL"
+        run: |
+          for i in $(seq 1 5); do
+            if solana airdrop 100 --url "$OCTAZE_RPC_URL"; then exit 0; fi
+            echo "airdrop retry $i…"; sleep 3
+          done
+          echo "airdrop failed"; exit 1
 
       - name: Anchor test
         run: anchor test --skip-local-validator --provider.cluster "$OCTAZE_RPC_URL"
