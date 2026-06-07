@@ -1,0 +1,84 @@
+name: Anchor tests on Octaze
+
+# Runs the escrow program's Anchor tests against a fresh Octaze virtual testnet
+# (a mainnet fork) spun up just for this run and torn down afterwards.
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    # Pin the toolchain to what the program was built with.
+    env:
+      SOLANA_VERSION: "1.18.26"
+      ANCHOR_VERSION: "0.31.0"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # --- Rust ---
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo + target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
+
+      # --- Solana CLI ---
+      - name: Install Solana CLI
+        run: |
+          sh -c "$(curl -sSfL https://release.anza.xyz/v${SOLANA_VERSION}/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+
+      # --- Anchor (via AVM) ---
+      - name: Install Anchor
+        run: |
+          cargo install --git https://github.com/coral-xyz/anchor avm --force
+          avm install ${ANCHOR_VERSION}
+          avm use ${ANCHOR_VERSION}
+
+      # --- Node / deps ---
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: yarn install --frozen-lockfile
+
+      # --- Wallet + program keypair ---
+      # A throwaway payer wallet for this CI run; funded on the fork below.
+      - name: Create payer wallet
+        run: |
+          mkdir -p ~/.config/solana
+          solana-keygen new --no-bip39-passphrase -o ~/.config/solana/id.json
+      # The program's deploy keypair must match declare_id! (5TDt…). It's
+      # gitignored, so provide it as a secret (base58 or JSON array contents).
+      - name: Restore program keypair
+        run: |
+          mkdir -p target/deploy
+          echo '${{ secrets.ESCROW_PROGRAM_KEYPAIR }}' > target/deploy/anchor_escrow-keypair.json
+
+      # --- Octaze virtual testnet (fresh fork; auto-torn-down after the job) ---
+      - name: Provision Octaze testnet
+        id: vnet
+        uses: Octaze-Dev/setup-vnet@v1
+        with:
+          api-key: ${{ secrets.OCTAZE_API_KEY }}
+          network: mainnet
+          mode: ci
+
+      # --- Fund the payer on the fork, then run the tests ---
+      - name: Fund payer on the fork
+        run: solana airdrop 100 --url "$OCTAZE_RPC_URL"
+
+      - name: Anchor test
+        run: anchor test --skip-local-validator --provider.cluster "$OCTAZE_RPC_URL"

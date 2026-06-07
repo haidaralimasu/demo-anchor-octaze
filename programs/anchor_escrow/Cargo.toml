@@ -1,0 +1,29 @@
+[package]
+name = "anchor-escrow"
+version = "0.1.0"
+description = "Created with Anchor"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "anchor_escrow"
+
+[features]
+default = []
+cpi = ["no-entrypoint"]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
+
+[dependencies]
+anchor-lang = { version = "1.0.0-rc.2", features = ["init-if-needed"] }
+anchor-spl = "1.0.0-rc.2"
+# Workaround: anchor-lang pulls solana-stake-interface (default features) which
+# enables serde on solana-sysvar 3.0.0, but that crate fails to enable serde on
+# solana-hash 3.0.0 (compile error in recent_blockhashes.rs). Force it on here.
+solana-hash = { version = "=3.0.0", features = ["serde"] }
+
+# Note: litesvm/solana-sdk test deps live in the root `anchor-escrow-tests`
+# package (tests/anchor-litesvm-tests.rs). They were duplicated here but unused,
+# and dragged a conflicting Solana-3.x host stack into `anchor build`'s IDL step.
