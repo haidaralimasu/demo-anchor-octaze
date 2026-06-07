@@ -77,19 +77,10 @@ jobs:
           network: mainnet
           mode: ci
 
-      # --- Wait for the fork's RPC to actually serve (route can lag readiness) ---
-      - name: Wait for RPC
-        run: |
-          for i in $(seq 1 30); do
-            ok=$(curl -s -X POST "$OCTAZE_RPC_URL" \
-              -H 'content-type: application/json' \
-              -d '{"jsonrpc":"2.0","id":1,"method":"getHealth"}' | grep -c '"result":"ok"' || true)
-            if [ "$ok" = "1" ]; then echo "RPC is serving"; exit 0; fi
-            echo "waiting for RPC… ($i)"; sleep 3
-          done
-          echo "RPC never became reachable"; exit 1
-
-      # --- Fund the payer on the fork (retry through any brief blips) ---
+      # --- Fund the payer on the fork ---
+      # The Octaze API only returns the testnet as "active" once its RPC is
+      # actually serving, so no client-side readiness wait is needed. The retry
+      # loop is just generic resilience against transient blips.
       - name: Fund payer on the fork
         run: |
           for i in $(seq 1 5); do
